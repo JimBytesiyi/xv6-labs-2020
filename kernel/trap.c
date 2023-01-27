@@ -67,7 +67,36 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } 
+  // 如果中断号为13或15, 出现page fault
+  else if(r_scause() == 13 || r_scause() == 15)
+  {
+    uint64 va = r_stval(); // 出现pgfault的错误VA
+    // printf("page fault %p\n", va);
+    if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp))
+    { // 如果VA超过栈顶或者低于栈底(到达guard page)
+      p->killed = 1; // 杀死进程
+    }
+    else
+    {
+      uint64 ka = (uint64)kalloc(); // kalloc返回的是void*, 这里有类型转换
+      if(ka == 0)
+        p->killed = 1; // 如果无法分配新页面, 杀死当前进程
+      else
+      {
+        memset((uint64*)ka, 0, PGSIZE); // 将新页全部填0
+        va = PGROUNDDOWN(va); // VA地址向下舍入
+        // 如果新增映射(即新增pte)失败
+        if(mappages(p->pagetable, va, PGSIZE, ka, PTE_W|PTE_R|PTE_U) != 0)
+        { // pte用于联系VA与PA的映射关系
+          kfree((void*)ka); // 释放新页的物理内存
+          p->killed = 1; // 杀死当前进程
+        }
+        // vmprint(p->pagetable); // 查看增加新页后的页表
+      }
+    }
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

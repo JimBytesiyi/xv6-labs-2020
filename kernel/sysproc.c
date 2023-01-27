@@ -43,13 +43,22 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  struct proc* p = myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
-  return addr;
+  addr = p->sz;
+  // if(growproc(n) < 0)
+    // return -1;
+  if(n < 0) // n < 0情况注意释放内存
+  {
+    if(p->sz + n < 0) // 这个异常处理不太理解
+      return -1;
+    // 释放多出的物理内存
+    uvmdealloc(p->pagetable, p->sz, p->sz + n);
+  }
+  p->sz = p->sz + n;
+  return addr; // 返回原本页表的大小
 }
 
 uint64
