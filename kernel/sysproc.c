@@ -95,3 +95,15 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// 系统调用函数的具体实现
+uint64
+sys_trace(void)
+{
+    int mask;
+    // 获取trace_mask参数
+    if(argint(0, &mask) < 0) // argint的实现在syscall.c的Line 57
+      return -1; // 根据argint()的参数可以推断出读取的是寄存器a0的值
+    myproc()->trace_mask = mask; // 当前进程获得了trace_mask的值
+    return 0;
+}

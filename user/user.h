@@ -1,6 +1,7 @@
 struct stat;
 struct rtcdate;
 
+// user space的系统调用函数
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
@@ -23,6 +24,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int trace(int); // 我想知道为什么trace.c会写成那样...
 
 // ulib.c
 int stat(const char*, struct stat*);

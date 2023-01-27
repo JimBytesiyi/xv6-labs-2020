@@ -31,11 +31,12 @@ fetchstr(uint64 addr, char *buf, int max)
   return strlen(buf);
 }
 
-static uint64
-argraw(int n)
+// 注意argraw(n)的返回值
+static uint64 // n的取值范围是0~5
+argraw(int n) // 读取保存在trapframe寄存器中的数据
 {
   struct proc *p = myproc();
-  switch (n) {
+  switch (n) { // 这里有6个寄存器(a0 ~ a5)
   case 0:
     return p->trapframe->a0;
   case 1:
@@ -54,11 +55,11 @@ argraw(int n)
 }
 
 // Fetch the nth 32-bit system call argument.
-int
-argint(int n, int *ip)
-{
-  *ip = argraw(n);
-  return 0;
+int // n的取值只可能是0~5
+argint(int n, int *ip) // n是作为函数参数传进来的, 还有一个int类型指针ip
+{ // argraw(n)返回的是一个unsigned long(无符号长整型64bit)?
+  *ip = argraw(n); // ip指向argraw(n)返回的寄存器数据
+   return 0; // 返回值是0代表读取成功
 }
 
 // Retrieve an argument as a pointer.
@@ -67,7 +68,7 @@ argint(int n, int *ip)
 int
 argaddr(int n, uint64 *ip)
 {
-  *ip = argraw(n);
+  *ip = argraw(n); // 这个函数是取寄存器数据的地址?
   return 0;
 }
 
@@ -83,6 +84,7 @@ argstr(int n, char *buf, int max)
   return fetchstr(addr, buf, max);
 }
 
+// 系统调用函数的declaration, 声明为extern
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -104,8 +106,9 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+extern uint64 sys_trace(void);
 
-static uint64 (*syscalls[])(void) = {
+static uint64 (*syscalls[])(void) = { // 这是一个函数指针数组/表
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
@@ -127,17 +130,49 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace,
+};
+
+static char* syscall_name[] = // 这是系统调用的函数名数组
+{
+[SYS_fork]    "fork",
+[SYS_exit]    "exit",
+[SYS_wait]    "wait",
+[SYS_pipe]    "pipe",
+[SYS_read]    "read",
+[SYS_kill]    "kill",
+[SYS_exec]    "exec",
+[SYS_fstat]   "fstat",
+[SYS_chdir]   "chdir",
+[SYS_dup]     "dup",
+[SYS_getpid]  "getpid",
+[SYS_sbrk]    "sbrk",
+[SYS_sleep]   "sleep",
+[SYS_uptime]  "uptime",
+[SYS_open]    "open",
+[SYS_write]   "write",
+[SYS_mknod]   "mknod",
+[SYS_unlink]  "unlink",
+[SYS_link]    "link",
+[SYS_mkdir]   "mkdir",
+[SYS_close]   "close",
+[SYS_trace]   "trace",
 };
 
 void
 syscall(void)
 {
   int num;
-  struct proc *p = myproc();
+  struct proc *p = myproc(); // 当前进程
 
-  num = p->trapframe->a7;
+  // syscall函数从寄存器a7中取出system call number
+  num = p->trapframe->a7; // system call number保存在寄存器a7
+  // 如果system call number有效
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();
+    p->trapframe->a0 = syscalls[num](); // 将系统调用函数的返回值写入寄存器a0中
+    // 位移后的结果与当前进程的trace_mask作比较, 可以追踪1或多个system call
+    if(p->trace_mask & (1 >> num))
+      printf("%d system call %s -> %d\n", p->pid, syscall_name[num], p->trapframe->a0);
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

@@ -259,8 +259,8 @@ int
 fork(void)
 {
   int i, pid;
-  struct proc *np;
-  struct proc *p = myproc();
+  struct proc *np; // 指向子进程的指针
+  struct proc *p = myproc(); // 指向父进程的指针
 
   // Allocate process.
   if((np = allocproc()) == 0){
@@ -292,6 +292,8 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+
+  np->trace_mask = p->trace_mask; // 子进程的mask和父进程相同
 
   np->state = RUNNABLE;
 
