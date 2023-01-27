@@ -43,6 +43,7 @@ usertrap(void)
 
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
+  // 将stvec设为kernelvec
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();

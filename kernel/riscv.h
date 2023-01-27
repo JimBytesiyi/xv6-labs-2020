@@ -337,7 +337,7 @@ sfence_vma()
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
 
-#define PTE_FLAGS(pte) ((pte) & 0x3FF)
+#define PTE_FLAGS(pte) ((pte) & 0x3FF) // 最后的10位就是flags(标志位)
 
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK          0x1FF // 9 bits
@@ -347,8 +347,9 @@ sfence_vma()
 // one beyond the highest possible virtual address.
 // MAXVA is actually one bit less than the max allowed by
 // Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
+// that have the high bit set.(所以MAXVA实际上是38位)
 #define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
 
-typedef uint64 pte_t;
+typedef uint64 pte_t; // pte_t是个64位的整数
+// 这个pagetable_t是个64位的指针
 typedef uint64 *pagetable_t; // 512 PTEs
