@@ -16,6 +16,31 @@ void kernelvec();
 
 extern int devintr();
 
+int cow_alloc(pagetable_t pagetable, uint64 va)
+{
+  if(va >= MAXVA) // 如果传入非法VA
+    return -1;
+
+  pte_t *pte;
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+  
+  if(((*pte & PTE_U) == 0) || ((*pte & PTE_V) == 0))
+    return -1;
+
+  uint64 pa1 = PTE2PA(*pte);
+  uint64 pa2 = (uint64)kalloc(); // 分配新页
+  if(pa2 == 0){
+    printf("cow kalloc failed\n");
+    return -1;
+  }
+  memmove((void*)pa2, (void*)pa1, PGSIZE); // 将旧页内容移动到新页
+  kfree((void*)pa1); // 旧页的引用计数减一(见kfree的修改), 不一定释放
+  *pte = PA2PTE(pa2) | PTE_V | PTE_U | PTE_W | PTE_R | PTE_X; // 更新为新页的pte
+  return 0;
+}
+
 void
 trapinit(void)
 {
@@ -67,7 +92,12 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } 
+  else if(r_scause() == 15){
+    if(cow_alloc(p->pagetable, r_stval()) < 0) // 如果没有空余内存
+      p->killed = 1; // 杀死进程
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

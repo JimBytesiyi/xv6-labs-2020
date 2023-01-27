@@ -76,7 +76,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
-    if(*pte & PTE_V) {
+    if(*pte & PTE_V) { // 如果该页有效
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
@@ -85,7 +85,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
-  return &pagetable[PX(0, va)];
+  return &pagetable[PX(0, va)]; // 返回root pagetable pte的地址
 }
 
 // Look up a virtual address, return the physical address,
@@ -303,6 +303,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // its memory into a child's page table.
 // Copies both the page table and the
 // physical memory.
+// 同时拷贝页表和物理内存
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
 int
@@ -311,20 +312,23 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+    if((pte = walk(old, i, 0)) == 0) // 父进程的pte
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    *pte &= ~PTE_W; // 取消父进程和子进程的写标志位
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0) // 子进程并没有分配内存
+      // goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    incr_cnt(pa);
+    // 将父进程的页表映射到子进程页表中
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      // kfree((void*)pa);
       goto err;
     }
   }
@@ -351,13 +355,25 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+// 修改copyout使其在遇到COW页时执行与page fault相同的方案
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
-{
+{ // 这个pagetable是用户页表
   uint64 n, va0, pa0;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+
+    if(va0 >= MAXVA)
+      return -1;
+    pte_t *pte = walk(pagetable, va0, 0);
+    if((pte == 0) || ((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0))
+      return -1;
+    if((*pte & PTE_W) == 0){
+      if(cow_alloc(pagetable, va0) < 0)
+        return -1;
+    }
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
