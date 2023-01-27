@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -96,15 +98,32 @@ walkaddr(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
   uint64 pa;
+  struct proc* p = myproc();
 
   if(va >= MAXVA)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
+  // if(pte == 0)
+    // return 0;
+  // if((*pte & PTE_V) == 0)
+    // return 0;
+  if((pte == 0) || ((*pte & PTE_V) == 0))
+  {
+    if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp))
+      return 0;
+    pa = (uint64)kalloc();
+    if(pa == 0)
+      return 0;
+    // 注意: VA地址向下舍入
+    // 如果新增映射(新增pte)失败
+    if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, pa, PTE_W|PTE_R|PTE_U|PTE_X) != 0)
+      { // pte用于联系VA与PA的映射关系
+        kfree((void*)pa); // 释放新页的物理内存
+        return 0;
+      }
+    return pa;
+  }
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
@@ -180,10 +199,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    if((pte = walk(pagetable, a, 0)) == 0) // 如果pte无效(即尚未增加映射)
+      // panic("uvmunmap: walk");
+      continue;
+    if((*pte & PTE_V) == 0) // 如果不是有效页
+      // panic("uvmunmap: not mapped");
+      continue; // 修改以便让内核能够接受page fault
+      // 在usertrap中进行page fault的处理
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -303,6 +325,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // its memory into a child's page table.
 // Copies both the page table and the
 // physical memory.
+// 同时拷贝页表和对应的物理内存
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
 int
@@ -314,10 +337,12 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    if((pte = walk(old, i, 0)) == 0) // 如果pte无效(即没有增加映射)
+      // panic("uvmcopy: pte should exist");
+      continue;
+    if((*pte & PTE_V) == 0) // 如果页面无效
+      // panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -439,4 +464,32 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void travel(pagetable_t pagetable, int level)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      printf("..");
+      for(int j = 0; j < level; j++)
+        printf(" ..");
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      printf("%d pte %p pa %p fl %p\n", i, pte, child, PTE_FLAGS(pte));
+      travel((pagetable_t)child, level + 1);
+    } 
+    else if(pte & PTE_V){
+      printf(".. .. ..");
+      uint64 leaf_pa = PTE2PA(pte);
+      printf("%d pte %p pa %p fl %p\n", i, pte, leaf_pa, PTE_FLAGS(pte));
+    }
+  }
+}
+
+void vmprint(pagetable_t pagetable)
+{
+  printf("pagetable %p\n", pagetable);
+  travel(pagetable, 0);
 }

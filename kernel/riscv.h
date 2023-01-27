@@ -167,7 +167,7 @@ w_stvec(uint64 x)
 }
 
 static inline uint64
-r_stvec()
+r_stvec() // save the program counter
 {
   uint64 x;
   asm volatile("csrr %0, stvec" : "=r" (x) );
