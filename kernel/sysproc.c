@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +95,37 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+uint64
+sys_trace(void)
+{
+    int mask; // user space的trace(int)会接受一个int参数
+    // 主要的问题是如何将user space中的函数参数传递给system call function
+    // mask的值保存在寄存器a0中, 所以传递给argint的第一个参数是0
+    if(argint(0, &mask) < 0) // 读取trapframe中a0寄存器的值
+      return -1;
+    myproc()->trace_mask = mask; // 将读取的值赋给当前进程
+    return 0;
+}
+
+uint64 // 打印系统信息
+sys_sysinfo(void)
+{
+    struct proc* p = myproc();
+    struct sysinfo s;
+    uint64 addr; // 用来存放VA
+    s.freemem = num_of_freeMemory();
+    s.nproc = num_of_proc();
+
+    // 获取virtual address
+    if(argaddr(0, &addr) < 0)
+      return -1;
+    // Copy from kernel to user.
+    // Copy len bytes from src to virtual address dstva in a given page table.
+    // 第三个参数是src, 第四个参数是复制数据的大小
+    // 第二个参数是destination VA, 目的虚拟地址
+    if(copyout(p->pagetable, addr, (char *)(&s), sizeof(s)) < 0)
+      return -1;
+    return 0;
 }

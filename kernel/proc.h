@@ -86,6 +86,7 @@ enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 struct proc {
   struct spinlock lock;
 
+  // 当访问以下状态量的时候需要启用p->lock
   // p->lock must be held when using these:
   enum procstate state;        // Process state
   struct proc *parent;         // Parent process
@@ -103,4 +104,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // mask值是单独加上去的
+  int trace_mask;              // 这里存放的是用于追踪系统调用的mask值, 系统调用函数只有22个, int类型长度完全满足
 };

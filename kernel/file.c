@@ -87,9 +87,9 @@ fileclose(struct file *f)
 int
 filestat(struct file *f, uint64 addr)
 {
-  struct proc *p = myproc();
-  struct stat st;
-  
+  struct proc *p = myproc(); // 当前进程
+  struct stat st; // stat结构体记录file的状态
+  // f是指向file结构体的指针
   if(f->type == FD_INODE || f->type == FD_DEVICE){
     ilock(f->ip);
     stati(f->ip, &st);

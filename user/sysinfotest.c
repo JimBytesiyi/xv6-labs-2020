@@ -3,7 +3,11 @@
 #include "kernel/sysinfo.h"
 #include "user/user.h"
 
-
+// 当我们创建sysinfo这个结构体的时候, 
+// 它就应该包含free memory和numbers of processes这两个数据
+// sysinfo needs to copy a struct sysinfo back to user space
+// 要将这个结构体返回到user space
+// 难点就在于怎么copyout这个结构体
 void
 sinfo(struct sysinfo *info) {
   if (sysinfo(info) < 0) {

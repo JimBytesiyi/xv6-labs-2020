@@ -22,7 +22,7 @@ void
 kvminit()
 {
   kernel_pagetable = (pagetable_t) kalloc();
-  memset(kernel_pagetable, 0, PGSIZE);
+  memset(kernel_pagetable, 0, PGSIZE); // 将这一页全部写0
 
   // uart registers
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
@@ -52,7 +52,7 @@ kvminit()
 void
 kvminithart()
 {
-  w_satp(MAKE_SATP(kernel_pagetable));
+  w_satp(MAKE_SATP(kernel_pagetable)); // satp寄存器中保存了root page-table page
   sfence_vma();
 }
 
@@ -70,22 +70,24 @@ kvminithart()
 //    0..11 -- 12 bits of byte offset within the page.
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
-{
-  if(va >= MAXVA)
-    panic("walk");
-
+{ // 使用每一级PTE的VA得到最终页的PTE的PA
+  // 当前page-table level页中的PTE得到的是PA, 由于PA和VA是直接映射关系, 
+  // 这一页的PA可以直接用作用于找到下一页PTE的VA
+  if(va >= MAXVA) // 如果超出virtual address的最大地址
+    panic("walk"); // cause a kernal panic
+  // 遍历page-table的三级结构
   for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
-    if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+    pte_t *pte = &pagetable[PX(level, va)]; // 计算每个page directory的PTE
+    if(*pte & PTE_V) { // 如果PTE_V标志位有效
+      pagetable = (pagetable_t)PTE2PA(*pte); // 可以将PTE转换为物理地址(PA)
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
-        return 0;
+        return 0; // 如果没有可用页, 直接返回0
       memset(pagetable, 0, PGSIZE);
-      *pte = PA2PTE(pagetable) | PTE_V;
+      *pte = PA2PTE(pagetable) | PTE_V; // 如果有可用页, 设定PTE
     }
   }
-  return &pagetable[PX(0, va)];
+  return &pagetable[PX(0, va)]; // 返回一个最终页(即三级结构中的Level0)PTE的PA
 }
 
 // Look up a virtual address, return the physical address,
@@ -151,18 +153,18 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   uint64 a, last;
   pte_t *pte;
 
-  a = PGROUNDDOWN(va);
+  a = PGROUNDDOWN(va); 
   last = PGROUNDDOWN(va + size - 1);
-  for(;;){
+  for(;;){ // 如果walk不能分配有效的可用页, 返回异常
     if((pte = walk(pagetable, a, 1)) == 0)
-      return -1;
-    if(*pte & PTE_V)
-      panic("remap");
+      return -1; 
+    if(*pte & PTE_V) // 如果是已经存在的PTE
+      panic("remap"); // kernel panic, 需要重新映射
     *pte = PA2PTE(pa) | perm | PTE_V;
-    if(a == last)
-      break;
+    if(a == last) // 如果该页的PTE已经全部完成初始化
+      break; 
     a += PGSIZE;
-    pa += PGSIZE;
+    pa += PGSIZE; // 继续初始化下一页的PTE
   }
   return 0;
 }
@@ -236,12 +238,13 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
-    mem = kalloc();
-    if(mem == 0){
+    mem = kalloc(); // kalloc会返回一个指针
+    if(mem == 0){ // 如果该指针为空
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
     memset(mem, 0, PGSIZE);
+    // 如果PTE初始化没有成功, 释放该内存
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);

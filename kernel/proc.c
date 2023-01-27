@@ -8,7 +8,8 @@
 
 struct cpu cpus[NCPU];
 
-struct proc proc[NPROC];
+// 只要遍历该数组就能访问到进程的状态了
+struct proc proc[NPROC]; // 这个proc结构体数组保存着所有的进程
 
 struct proc *initproc;
 
@@ -292,6 +293,8 @@ fork(void)
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
+
+  np->trace_mask = p->trace_mask; // 子进程的mask值等于父进程的mask值
 
   np->state = RUNNABLE;
 
@@ -692,4 +695,20 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// 返回当前状态不为UNUSED的进程数量
+uint64 num_of_proc(void)
+{
+    uint64 num = 0;
+    struct proc* p;
+    /* use spinlock to avoid race(accessing 'nproc') between different threads */
+    for(p = &proc[0]; p < &proc[NPROC]; ++p)
+    { // 注意这里需要加锁(参考proc.h关于proc结构体的说明:Line 89)
+      acquire(&p->lock); // 防止同时访问不同进程的状态
+      if(p->state != UNUSED)
+        num++;
+      release(&p->lock);
+    }
+    return num;
 }
