@@ -22,7 +22,7 @@ void
 acquiresleep(struct sleeplock *lk)
 {
   acquire(&lk->lk);
-  while (lk->locked) {
+  while (lk->locked) { // the lock is held
     sleep(lk, &lk->lk);
   }
   lk->locked = 1;
@@ -34,7 +34,7 @@ void
 releasesleep(struct sleeplock *lk)
 {
   acquire(&lk->lk);
-  lk->locked = 0;
+  lk->locked = 0; // do not hold the sleeplock
   lk->pid = 0;
   wakeup(lk);
   release(&lk->lk);

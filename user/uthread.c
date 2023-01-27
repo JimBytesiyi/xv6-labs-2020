@@ -10,11 +10,29 @@
 #define STACK_SIZE  8192
 #define MAX_THREAD  4
 
+struct ucontext {
+  uint64 ra;
+  uint64 sp;
+
+  // callee-saved
+  uint64 s0;
+  uint64 s1;
+  uint64 s2;
+  uint64 s3;
+  uint64 s4;
+  uint64 s5;
+  uint64 s6;
+  uint64 s7;
+  uint64 s8;
+  uint64 s9;
+  uint64 s10;
+  uint64 s11;
+};
 
 struct thread {
-  char       stack[STACK_SIZE]; /* the thread's stack */
+  char       stack[STACK_SIZE]; /* the thread's stack */ 
   int        state;             /* FREE, RUNNING, RUNNABLE */
-
+  struct ucontext context; // uthread_switch() here
 };
 struct thread all_thread[MAX_THREAD];
 struct thread *current_thread;
@@ -39,18 +57,18 @@ thread_schedule(void)
 
   /* Find another runnable thread. */
   next_thread = 0;
-  t = current_thread + 1;
+  t = current_thread + 1; // t是用于遍历线程数组的指针
   for(int i = 0; i < MAX_THREAD; i++){
     if(t >= all_thread + MAX_THREAD)
-      t = all_thread;
+      t = all_thread; // the array wrap around
     if(t->state == RUNNABLE) {
-      next_thread = t;
+      next_thread = t; // 寻找到状态为RUNNABLE的进程
       break;
     }
-    t = t + 1;
+    t = t + 1; 
   }
 
-  if (next_thread == 0) {
+  if (next_thread == 0) { // 如果没找到
     printf("thread_schedule: no runnable threads\n");
     exit(-1);
   }
@@ -63,6 +81,8 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+    // 将当前进程切换到下一个进程
+    thread_switch((uint64)&t->context, (uint64)&current_thread->context);
   } else
     next_thread = 0;
 }
@@ -75,8 +95,11 @@ thread_create(void (*func)())
   for (t = all_thread; t < all_thread + MAX_THREAD; t++) {
     if (t->state == FREE) break;
   }
-  t->state = RUNNABLE;
+  t->state = RUNNABLE; // 将free状态进程设为runnable
   // YOUR CODE HERE
+  // 设置ra和sp寄存器的值
+  t->context.ra = (uint64)func; // 返回地址
+  t->context.sp = (uint64)t->stack + STACK_SIZE;
 }
 
 void 

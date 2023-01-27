@@ -26,11 +26,22 @@ static void
 barrier()
 {
   // YOUR CODE HERE
-  //
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  bstate.nthread += 1; // 如果最先返回的线程想修改nthread, 尚未返回的其中一个线程仍然持有mutex锁, 因此最先返回的线程无法修改
+
+  if(bstate.nthread == nthread){
+    bstate.nthread = 0;
+    bstate.round += 1;
+    pthread_cond_broadcast(&bstate.barrier_cond);
+  }
   // Block until all threads have called barrier() and
   // then increment bstate.round.
-  //
-  
+  else{
+    // 所有的线程共享一个mutex锁, 当一个进程进入睡眠时会释放mutex锁(必须先获得mutex锁)
+    // 其他线程可以获得
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+  }
+  pthread_mutex_unlock(&bstate.barrier_mutex); // 最后释放锁, 保证最先返回的进程不会修改下一轮nthread的值
 }
 
 static void *
@@ -43,7 +54,7 @@ thread(void *xa)
   for (i = 0; i < 20000; i++) {
     int t = bstate.round;
     assert (i == t);
-    barrier();
+    barrier(); // 每个线程都会调用barrier
     usleep(random() % 100);
   }
 
