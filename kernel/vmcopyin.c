@@ -30,7 +30,7 @@ int
 copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   struct proc *p = myproc();
-
+  // 第三个测试条件是为了防止溢出
   if (srcva >= p->sz || srcva+len >= p->sz || srcva+len < srcva)
     return -1;
   memmove((void *) dst, (void *)srcva, len);

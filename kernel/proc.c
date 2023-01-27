@@ -38,6 +38,7 @@ procinit(void)
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
+      // 这里是增加kstack的映射没问题啊
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
   }
@@ -121,6 +122,13 @@ found:
     return 0;
   }
 
+  // 分配进程的内核页表
+  // An empty user page table.
+  p->kpagetable = kvmcreate();
+  // 内核中用户允许访问的范围是0--PLIC 
+  // 但之前kernel_pagetable已经映射了一个CLINT
+  // p->kpagtable和kernel_pagetable相同
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,7 +149,10 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->kpagetable)
+    kvmfree(p->kpagetable, p->sz);
   p->pagetable = 0;
+  p->kpagetable = 0; // 增加这一行
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -177,8 +188,9 @@ proc_pagetable(struct proc *p)
   // map the trapframe just below TRAMPOLINE, for trampoline.S.
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
               (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
+    // 如果增加trampoline映射失败, 解除映射, 释放物理内存
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-    uvmfree(pagetable, 0);
+    uvmfree(pagetable, 0); // 这个uvmfree第二个参数为0, 主要是释放一二级页表
     return 0;
   }
 
@@ -230,25 +242,31 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  kvmmapuser(p->pid, p->pagetable, p->kpagetable, 0, p->sz);
+
   release(&p->lock);
 }
 
+// 这个是sys_sbrk(sysproc.c)调用的函数
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
 growproc(int n)
 {
-  uint sz;
+  uint sz; 
   struct proc *p = myproc();
-
   sz = p->sz;
-  if(n > 0){
+
+  if(n > 0){ // grow n bytes
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
-  } else if(n < 0){
+  } else if(n < 0){ // shrink n bytes
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  // 将新增加的字节映射到进程内核页表中
+  kvmmapuser(p->pid, p->pagetable, p->kpagetable, p->sz, sz);
+
   p->sz = sz;
   return 0;
 }
@@ -294,6 +312,13 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  // if(p->pid == 1)
+  // {
+    // vmPrint(p->pagetable);
+  // }
+
+  kvmmapuser(np->pid, np->pagetable, np->kpagetable, 0, np->sz);
 
   release(&np->lock);
 
@@ -473,11 +498,18 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // 切换为当前进程的内核页表
+        kvmswitch(p->kpagetable);
+
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+        // 当上一个进程运行完毕或者没有进程运行时
+        // 切换回主内核页表
+        kvmswitch_kernel();
 
         found = 1;
       }

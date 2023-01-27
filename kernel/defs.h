@@ -108,6 +108,7 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+void            proc_free_kernelpagetable(struct proc*);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -160,7 +161,7 @@ int             uartgetc(void);
 // vm.c
 void            kvminit(void);
 void            kvminithart(void);
-uint64          kvmpa(uint64);
+uint64          kvmpa(pagetable_t, uint64); // kvmpa's parameter list has been changed
 void            kvmmap(uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
 pagetable_t     uvmcreate(void);
@@ -178,6 +179,16 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+// these are new added functions below
+void            vmPrint(pagetable_t);
+pagetable_t     kvmcreate(void);
+void            kvmmapkern(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm);
+void            kvmswitch(pagetable_t pagetable);
+void            kvmswitch_kernel();
+void            kvmfree(pagetable_t kpagetable, uint64 sz);
+void            kvmmapuser(int pid, pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 newsz);
+int             copyin_new(pagetable_t, char *, uint64, uint64);
+int             copyinstr_new(pagetable_t, char *, uint64, uint64);
 
 // plic.c
 void            plicinit(void);
